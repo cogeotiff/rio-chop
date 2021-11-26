@@ -4,6 +4,7 @@ import math
 import os
 import sys
 import warnings
+from contextlib import ExitStack
 
 import click
 import morecantile
@@ -51,11 +52,9 @@ def dims(total, chop):
     "--prefix", type=str, required=True, help="output file prefix.",
 )
 @click.option(
-    "--width", "-w", type=int, default=5000, help="Chop width (default: 5000px)",
+    "--width", type=int, default=5000, help="Chop width (default: 5000px)",
 )
-@click.option(
-    "--height", "-h", type=int, default=5000, help="Chop height (default: 5000px)"
-)
+@click.option("--height", type=int, default=5000, help="Chop height (default: 5000px)")
 @click.option(
     "--cog-profile",
     "-p",
@@ -114,6 +113,9 @@ def dims(total, chop):
     callback=options._cb_key_val,
     help="GDAL configuration options.",
 )
+@click.option(
+    "--quiet", "-q", help="Remove progressbar and other non-error output.", is_flag=True
+)
 def chop(
     input,
     prefix,
@@ -130,8 +132,14 @@ def chop(
     resampling,
     creation_options,
     config,
+    quiet,
 ):
-    """Chop and COG"""
+    """Split a dataset into smaller COGs"""
+    if not GDALVersion.runtime().at_least("3.1"):
+        raise Exception(
+            f"Incompatible GDAL version {GDALVersion.runtime()}. Must be at least 3.1."
+        )
+
     output_profile = cog_profiles.get(cogeo_profile)
     output_profile.update(dict(BIGTIFF=os.environ.get("BIGTIFF", "IF_SAFER")))
     if creation_options:
@@ -157,9 +165,10 @@ def chop(
     tilesize = min(int(output_profile["blockxsize"]), int(output_profile["blockysize"]))
 
     with rasterio.Env(**config):
-        with rasterio.open(input) as src:
-            w, h = src.meta["width"], src.meta["height"]
+        with ExitStack() as ctx:
+            src = ctx.enter_context(rasterio.open(input))
 
+            w, h = src.meta["width"], src.meta["height"]
             mask = utils.has_mask_band(src)
 
             winds = [
@@ -167,8 +176,10 @@ def chop(
                 for roff, ht in dims(h, height)
                 for coff, wd in dims(w, width)
             ]
+
+            fout = ctx.enter_context(open(os.devnull, "w")) if quiet else sys.stderr
             with click.progressbar(
-                winds, length=len(winds), file=sys.stderr, show_percent=True
+                winds, length=len(winds), file=fout, show_percent=True
             ) as blocks:
                 for col_off, w, row_off, h in blocks:
 
@@ -190,8 +201,13 @@ def chop(
                     datasetname = f"MEM:::{dataset_options}"
 
                     with rasterio.open(datasetname, "r+") as w_dst:
+                        # Set transform, CRS and nodata
                         w_dst.transform = src.window_transform(window)
                         w_dst.crs = src.crs
+                        w_dst.nodata = src.nodata
+                        w_dst.colorinterp = src.colorinterp
+
+                        # Forward colormap
                         if src.colorinterp[0] is ColorInterp.palette:
                             try:
                                 w_dst.write_colormap(1, src.colormap(1))
@@ -203,13 +219,18 @@ def chop(
                                 src.dataset_mask(window=window).astype("uint8")
                             )
 
+                        # Forward Tags/Descriptions
                         w_dst.update_tags(**src.tags())
                         w_dst._set_all_scales([src.scales[b - 1] for b in src.indexes])
                         w_dst._set_all_offsets(
                             [src.offsets[b - 1] for b in src.indexes]
                         )
 
-                        output_profile["driver"] = "COG"
+                        for i, b in enumerate(src.indexes):
+                            w_dst.set_band_description(i + 1, src.descriptions[b - 1])
+                            w_dst.update_tags(i + 1, **src.tags(b))
+
+                        output_profile["driver"] = "COG"  # COG Driver
                         if web_optimized:
                             output_profile["TILING_SCHEME"] = (
                                 "GoogleMapsCompatible"
