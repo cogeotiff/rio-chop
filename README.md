@@ -123,13 +123,13 @@ world_cog.tif
 
 ## Contribution & Development
 
-See [CONTRIBUTING.md](https://github.com/cogeotiff/rio-chop/blob/master/CONTRIBUTING.md)
+See [CONTRIBUTING.md](https://github.com/cogeotiff/rio-chop/blob/main/CONTRIBUTING.md)
 
 ## Changes
 
-See [CHANGES.md](https://github.com/cogeotiff/rio-chop/blob/master/CHANGES.md).
+See [CHANGES.md](https://github.com/cogeotiff/rio-chop/blob/main/CHANGES.md).
 
 ## License
 
-See [LICENSE](https://github.com/cogeotiff/rio-chop/blob/master/LICENSE)
+See [LICENSE](https://github.com/cogeotiff/rio-chop/blob/main/LICENSE)
 
