@@ -43,7 +43,7 @@ $ pip install git+http://github.com/cogeotiff/rio-chop
 
 ## GDAL >3.1
 
-`rio-cho` is using the new `COG` driver, thus GDAL >=3.1 is required.
+`rio-chop` is using the new `COG` driver, thus GDAL >=3.1 is required.
 
 ## Usage
 ```
